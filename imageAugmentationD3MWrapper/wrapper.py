@@ -1,39 +1,39 @@
 import os
 import numpy as np
 import pandas as pd
+import sys
 
 from albumentations import *   # TODO: Modify this once I have finalized the transforms I will be using.
 from PIL import Image
+
+from collections import OrderedDict
+
+from d3m import container, utils
+from d3m.container import DataFrame as d3m_DataFrame
+from d3m.metadata import base as metadata_base, hyperparams, params
+from d3m.primitive_interfaces.base import PrimitiveBase, CallResult
+from d3m.primitive_interfaces.transformer import TransformerPrimitiveBase
 
 Inputs = container.pandas.DataFrame
 Outputs = container.pandas.DataFrame
 
 class Hyperparams(hyperparams.Hyperparams):
-    center_crop = hyperparams.Union(
+    transform_group = hyperparams.Union(
         OrderedDict({
-            'height': hyperparams.Constant[int](
+            'image_classification_option_1': hyperparams.Constant[str](
+                default = 'image_classification_option_1',
                 semantic_types = ['https://metadata.datadrivendiscovery.org/types/TuningParameter'],
-                description = 'height of the crop'
+                description = 'Apply image classification transforms'
             ),
-            'width': hyperparams.Constant[int](
+            'object_detection_option_1': hyperparams.Constant[str](
+                default = 'object_detection_option_1',
                 semantic_types = ['https://metadata.datadrivendiscovery.org/types/TuningParameter'],
-                description = 'width of the crop'
+                description = 'Apply object detection transforms'
             )
         }),
-        default = False,
+        default = 'image_classification_option_1',
         semantic_types = ['https://metadata.datadrivendiscovery.org/types/TuningParameter'],
-        description = "Crop the central part of the input."
-    )
-    vertical_flip = hyperparams.Hyperparameter[bool](
-        default = False,
-        semantic_types = ['https://metadata.datadrivendiscovery.org/types/ControlParameter'],
-        description = "Flip the input vertically around the x-axis."
-    )
-
-    bounding_boxes = hyperparams.Hyperparameter[bool](
-        default = False,
-        semantic_types = ['https://metadata.datadrivendiscovery.org/types/ControlParameter'],
-        description = "Indicates whether or not the dataset has bounding boxes (an object detection task)"
+        description = "Image augmentation transform group to apply to images."
     )
 
     data_path = hyperparams.Hyperparameter[str](
@@ -45,7 +45,7 @@ class Hyperparams(hyperparams.Hyperparams):
 class Params(params.Params):
     pass
 
-class ImageAugmentationPrimitive(PrimitiveBase[Inputs, Outputs, Params, Hyperparams]):
+class ImageAugmentationPrimitive(TransformerPrimitiveBase[Inputs, Outputs, Hyperparams]):
     """
     Primitive that utilizes the albumentations library to augment input image data set
     before training. The base library can be found at:
@@ -75,40 +75,68 @@ class ImageAugmentationPrimitive(PrimitiveBase[Inputs, Outputs, Params, Hyperpar
             'name': 'Distil',
             'contact': 'mailto:sanjeev@yonder.co',
             'uris': [
-                '',
+                'https://github.com/NewKnowledge/image-augmentation-d3m-wrapper',
             ],
         },
        'installation': [
             {
                 'type': 'PIP',
-                'package_uri': ''
+                'package_uri': 'git+https://github.com/NewKnowledge/image-augmentation-d3m-wrapper.git@{git_commit}#egg=imageAugmentationD3MWrapper'.format(
+                    git_commit = utils.current_git_commit(os.path.dirname(__file__)),)
             },
         ],
-        'algorithm_types': [metadata_base.PrimitiveAlgorithmType.IMAGE_AUGMENTATION],
+        'algorithm_types': [metadata_base.PrimitiveAlgorithmType.RETINANET], #TODO: Fix, obviously
         'primitive_family': metadata_base.PrimitiveFamily.DATA_AUGMENTATION,
         }
     )
 
     def __init__(self, *, hyperparams: Hyperparams) -> None:
         super().__init__(hyperparams = hyperparams)
-        self.vertical_flip_params = None
-        self.center_crop_params = None
+        self.classification_options = ['image_classification_option_1', 'image_classification_option_2']
+        self.object_detection_options = ['object_detection_option_1', 'object_detection_option_2']
 
-    def get_params(self) -> Params:
-        return self._params
+    # def get_params(self) -> Params:
+    #     return self._params
 
-    def set_params(self, *, params: Params) -> None:
-        self.params = params
+    # def set_params(self, *, params: Params) -> None:
+    #     self.params = params
 
-    def _get_params(self):
-        if self.hyperparams['vertical_flip'] is True:
-            self.vertical_flip_params = self.hyperparams['vertical_flip']
+    def _augmentation(self, bbox_params, transform_group):
+        if transform_group == self.classification_options[0]:
+            return Compose([
+                RandomRotate90(),
+                RandomGridShuffle(grid = (3,3)),
+                Blur(blur_limit = (300, 300)),
+                ShiftScaleRotate(shift_limit = 0.0625, scale_limit = 0.50, rotate_limit = 45, p = .75)
+            ])
 
-        if self.hyperparams['center_crop'] is True:
-            self.center_crop_params = self.hyperparams['center_crop']
+        if transform_group == self.classification_options[1]:
+            return Compose([
+                RandomRotate90(),
+                Transpose(),
+                ShiftScaleRotate(shift_limit = 0.0625, scale_limit = 0.50, rotate_limit = 45, p = .75)
+            ])
 
-    def _transformations(self):
-        pass
+        if transform_group == self.object_detection_options[0]:
+            return Compose([
+                RandomRotate90(),
+                Transpose(),
+                ShiftScaleRotate(shift_limit = 0.0625, scale_limit = 0.50, rotate_limit = 45, p = .75)
+            ])
+
+        if transform_group == self.object_detection_options[1]:
+            return Compose([
+                RandomRotate90(),
+                Transpose(),
+                ShiftScaleRotate(shift_limit = 0.0625, scale_limit = 0.50, rotate_limit = 45, p = .75)
+            ])
+
+    def _construct_augmented_image_table(self, results, export_path):
+        original_filename = os.path.basename(results['filename'])
+        augmented_filename = os.path.basename(os.listdir(export_path))
+
+        if original_filename == augmented_filename:
+            return results['filename'] = export_path
 
     def produce(self, *, inputs: Inputs, timeout: float = None, iterations: int = None) -> CallResult[Outputs]:
         # Import images paths from learningData.csv
@@ -117,33 +145,42 @@ class ImageAugmentationPrimitive(PrimitiveBase[Inputs, Outputs, Params, Hyperpar
         image_paths = np.array([[os.path.join(base_dir, filename) for filename in inputs.iloc[:,col]] for base_dir, col in zip(base_dir, image_cols)]).flatten()
         image_paths = pd.Series(image_paths)
 
-        # Import bounding box coordinates from learningData.csv if specified
+        # Import bounding box coordinates from learningData.csv if needed
         bbox_params = None
-        if self.hyperparams['bounding_boxes'] is True:
+        if self.hyperparams['transform_group'] in self.object_detection_options:
             bounding_coords = inputs.bounding_box.str.split(',', expand = True)
             bounding_coords = bounding_coords.drop(bounding_coords.columns[[2, 5, 6, 7]], axis = 1)
             bounding_coords.columns = ['x1', 'y1', 'y2', 'x2']
             bounding_coords = bounding_coords[['x1', 'y1', 'x2', 'y2']]
             bbox_params = bounding_coords
 
-        # Parse hyperparams and assemble into the Compose function
-        # Should maybe just have a function where if you pass it a hyperparameter, it will assemble the transform for you.
-        _get_params()
-        _augmentation(bbox_params = bbox_params)
+        # Assemble into the Compose function
+        aug = self._augmentation(bbox_params = bbox_params, transform_group = self.hyperparams['transform_group'])
+        # Apply compose function to image set
+        export_path = self.hyperparams['data_path']
 
-        # apply compose function to image set
-        # and export images to the correct folder. Probably just loop over each image in image_paths
+        # for image_path in image_paths:
+        #     im = np.array(Image.open(image_path))
+        #     im_augmented = Image.fromarray(aug(image = im)['image'])
+        #     img_name = os.path.basename(image_path)
+        #     im_augmented.save(export_path + img_name + '_augmented')
 
-        export_path = self.hyperparameters['data_path']   # Might need to be part of a function that does the exporting
+        # Add rows to learning data with duplicate images and their new rows
+        results = inputs
+        original_filename = os.path.basename(results['filename'])[0]
+        augmented_filename = os.path.basename(os.listdir(export_path))[0]
 
-        for image_path in image_paths:
-            im = Image.open(image_path)
-            im_augmented = _augmentation(image = im)['image']
-            img_name = os.path.basename(image_path)
-            im_augmented.save(export_path + img_name)
+        if original_filename == augmented_filename:
+            results['filename'][0] = export_path[0]
 
-        # add rows to learning data with duplicate images and their new rows
-        # return the resulting data frame to be based on to the next step in the pipeline
+        results.apply(lambda row: _construct_augmented_image_table(results[]))
+
+
+        ## Copy learning data to a variable
+        ## Update all the paths with the corresponding paths in the augmented path
+        ## Append to learning data
+        ## Assign the result to the output data frame
+
         return CallResult(None)
 
 # """ WORKSPACE """
