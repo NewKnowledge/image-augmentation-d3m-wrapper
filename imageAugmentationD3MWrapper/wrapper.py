@@ -1,3 +1,8 @@
+## TODO: Test with bounding boxes
+## TODO: Test in context of classification pipeline
+## TODO: Test in context of object detection pipeline
+## TODO: Research common transforms and set as hyperparameters
+
 import os
 import numpy as np
 import pandas as pd
@@ -131,13 +136,6 @@ class ImageAugmentationPrimitive(TransformerPrimitiveBase[Inputs, Outputs, Hyper
                 ShiftScaleRotate(shift_limit = 0.0625, scale_limit = 0.50, rotate_limit = 45, p = .75)
             ])
 
-    def _construct_augmented_image_table(self, results, export_path):
-        original_filename = os.path.basename(results['filename'])
-        augmented_filename = os.path.basename(os.listdir(export_path))
-
-        if original_filename == augmented_filename:
-            return results['filename'] = export_path
-
     def produce(self, *, inputs: Inputs, timeout: float = None, iterations: int = None) -> CallResult[Outputs]:
         # Import images paths from learningData.csv
         image_cols = inputs.metadata.get_columns_with_semantic_type('https://metadata.datadrivendiscovery.org/types/FileName')
@@ -159,27 +157,38 @@ class ImageAugmentationPrimitive(TransformerPrimitiveBase[Inputs, Outputs, Hyper
         # Apply compose function to image set
         export_path = self.hyperparams['data_path']
 
-        # for image_path in image_paths:
-        #     im = np.array(Image.open(image_path))
-        #     im_augmented = Image.fromarray(aug(image = im)['image'])
-        #     img_name = os.path.basename(image_path)
-        #     im_augmented.save(export_path + img_name + '_augmented')
+        for image_path in image_paths[0:9]:   # TODO: Remove 0:9 later
+            im = np.array(Image.open(image_path))
+            im_augmented = Image.fromarray(aug(image = im)['image'])
+            img_name = os.path.basename(image_path)
+            #print('image_path', file = sys.__stdout__)
+            #print(image_path, file = sys.__stdout__)
+            #print('img_name:', file = sys.__stdout__)
+            #print(img_name, file = sys.__stdout__)
+            img_extension = os.path.splitext(img_name)[1]
+            img_name = os.path.splitext(img_name)[0] + '_augmented' + img_extension
+            #print('img_name:', file = sys.__stdout__)
+            #print(img_name, file = sys.__stdout__)
+            im_augmented.save(export_path + img_name)
 
         # Add rows to learning data with duplicate images and their new rows
-        results = inputs
-        original_filename = os.path.basename(results['filename'])[0]
-        augmented_filename = os.path.basename(os.listdir(export_path))[0]
+        results = inputs.copy()
 
-        if original_filename == augmented_filename:
-            results['filename'][0] = export_path[0]
+        original_filename = results['filename'].apply(lambda x: os.path.basename(x))
+        original_basename = original_filename.apply(lambda x:  os.path.splitext(x)[0])
+        augmented_filename = results['filename'].apply(lambda x: os.path.splitext(x)[0]) + '_augmented.jpg'
+        augmented_basename = augmented_filename.apply(lambda x: os.path.splitext(x)[0].split('_augmented')[0])
 
-        results.apply(lambda row: _construct_augmented_image_table(results[]))
+        # TODO: Augmented filename needs export_path appeneded to it
+        # TODO: Need a way to address the fail condition here
+        for row in range(0, results.shape[0]):
+            if original_basename.loc[row] == augmented_basename.loc[row]:
+                results.loc[row, 'filename'] = augmented_filename.loc[row]
 
+        ## TODO: Append to learning data
+        results_df = pd.concat([inputs, results])
 
-        ## Copy learning data to a variable
-        ## Update all the paths with the corresponding paths in the augmented path
-        ## Append to learning data
-        ## Assign the result to the output data frame
+        ## TODO: Assign the result to the output data frame
 
         return CallResult(None)
 
@@ -201,7 +210,6 @@ class ImageAugmentationPrimitive(TransformerPrimitiveBase[Inputs, Outputs, Hyper
 #         configuration=OrderedDict(
 #             limit=hyperparams.Bounded[int](
 #                 lower=1,
-#                 # TODO: 1-10 instead?
 #                 upper=None,
 #                 default=1,
 #                 description='Maximum delta step we allow each leaf output to be.'
@@ -216,3 +224,27 @@ class ImageAugmentationPrimitive(TransformerPrimitiveBase[Inputs, Outputs, Hyper
 #         description='Maximum delta step we allow.',
 #         semantic_types=['https://metadata.datadrivendiscovery.org/types/TuningParameter'],
 #     )
+
+# original_filename = os.path.basename(results['filename'])[0]
+#         augmented_filename = os.path.basename(os.listdir(export_path))[0]
+
+#         if original_filename == augmented_filename:
+#             results['filename'][0] = export_path[0]
+
+#         results.apply(lambda row: _construct_augmented_image_table(results[]))
+
+# def _construct_augmented_image_table(self, results, export_path):
+#         original_filename = os.path.basename(results['filename'])
+#         augmented_filename = os.path.basename(os.listdir(export_path))
+
+#         if original_filename == augmented_filename:
+#             return results['filename'] = export_path
+
+        # test_results = pd.DataFrame({
+        #     'inputs_filename': inputs['filename'],
+        #     'results_filename': results['filename'],
+        #     'inputs_bounding_box': inputs['bounding_box'],
+        #     'results_bounding_box': results['bounding_box']
+        # })
+
+        # test_results.to_csv('/image-augmentation/imageAugmentationD3MWrapper/temp/test_results.csv', index = False)
