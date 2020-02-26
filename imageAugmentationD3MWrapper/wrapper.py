@@ -1,5 +1,5 @@
+## TODO: Test in context of classification pipeline (Unicorn?)
 ## TODO: Test with bounding boxes
-## TODO: Test in context of classification pipeline
 ## TODO: Test in context of object detection pipeline
 ## TODO: Research common transforms and set as hyperparameters
 
@@ -28,12 +28,22 @@ class Hyperparams(hyperparams.Hyperparams):
             'image_classification_option_1': hyperparams.Constant[str](
                 default = 'image_classification_option_1',
                 semantic_types = ['https://metadata.datadrivendiscovery.org/types/TuningParameter'],
-                description = 'Apply image classification transforms'
+                description = 'Apply image classification transforms option 1'
+            ),
+            'image_classification_option_2': hyperparams.Constant[str](
+                default = 'image_classification_option_2',
+                semantic_types = ['https://metadata.datadrivendiscovery.org/types/TuningParameter'],
+                description = 'Apply image classification transforms option 2'
             ),
             'object_detection_option_1': hyperparams.Constant[str](
                 default = 'object_detection_option_1',
                 semantic_types = ['https://metadata.datadrivendiscovery.org/types/TuningParameter'],
-                description = 'Apply object detection transforms'
+                description = 'Apply object detection transforms option 1'
+            ),
+            'object_detection_option_2': hyperparams.Constant[str](
+                default = 'object_detection_option_2',
+                semantic_types = ['https://metadata.datadrivendiscovery.org/types/TuningParameter'],
+                description = 'Apply object detection transforms option 2'
             )
         }),
         default = 'image_classification_option_1',
@@ -57,16 +67,13 @@ class ImageAugmentationPrimitive(TransformerPrimitiveBase[Inputs, Outputs, Hyper
     https://github.com/NewKnowledge/albumentations.
 
     The primitive accepts a Dataset consisting of image paths and (optionally)
-    bounding boxes as inputs. It performs user-specified transforms on the images
-    (and on bounding boxes if present), stores these new images in a hyperparameter
-    write location, and updates the learning data CSV with new rows for the augmented
-    images.
+    bounding boxes as inputs. It performs transforms on the images (and on bounding
+    boxes if present), stores these new images in a hyperparameter write location, and
+    updates the learning data CSV with new rows for the augmented images.
 
-    Only a selection of spatial transforms were included from the base library (pixel-
+    Only a selection of spatial transforms are utilized from the base library (pixel-
     level transforms are omitted entirely). These transforms will affect all images and
-    masks but only affects bounding boxes in some cases. Some sets of transforms
-    commonly used together are also included with the capability of randomly selecting
-    which gets applied according to a probability hyperparameter.
+    masks but only affects bounding boxes in some cases.
     """
 
     metadata = metadata_base.PrimitiveMetadata(
@@ -99,12 +106,6 @@ class ImageAugmentationPrimitive(TransformerPrimitiveBase[Inputs, Outputs, Hyper
         super().__init__(hyperparams = hyperparams)
         self.classification_options = ['image_classification_option_1', 'image_classification_option_2']
         self.object_detection_options = ['object_detection_option_1', 'object_detection_option_2']
-
-    # def get_params(self) -> Params:
-    #     return self._params
-
-    # def set_params(self, *, params: Params) -> None:
-    #     self.params = params
 
     def _augmentation(self, bbox_params, transform_group):
         if transform_group == self.classification_options[0]:
@@ -161,14 +162,8 @@ class ImageAugmentationPrimitive(TransformerPrimitiveBase[Inputs, Outputs, Hyper
             im = np.array(Image.open(image_path))
             im_augmented = Image.fromarray(aug(image = im)['image'])
             img_name = os.path.basename(image_path)
-            #print('image_path', file = sys.__stdout__)
-            #print(image_path, file = sys.__stdout__)
-            #print('img_name:', file = sys.__stdout__)
-            #print(img_name, file = sys.__stdout__)
             img_extension = os.path.splitext(img_name)[1]
             img_name = os.path.splitext(img_name)[0] + '_augmented' + img_extension
-            #print('img_name:', file = sys.__stdout__)
-            #print(img_name, file = sys.__stdout__)
             im_augmented.save(export_path + img_name)
 
         # Add rows to learning data with duplicate images and their new rows
@@ -176,21 +171,46 @@ class ImageAugmentationPrimitive(TransformerPrimitiveBase[Inputs, Outputs, Hyper
 
         original_filename = results['filename'].apply(lambda x: os.path.basename(x))
         original_basename = original_filename.apply(lambda x:  os.path.splitext(x)[0])
+
         augmented_filename = results['filename'].apply(lambda x: os.path.splitext(x)[0]) + '_augmented.jpg'
         augmented_basename = augmented_filename.apply(lambda x: os.path.splitext(x)[0].split('_augmented')[0])
+        augmented_filepath = export_path + augmented_filename
 
-        # TODO: Augmented filename needs export_path appeneded to it
         # TODO: Need a way to address the fail condition here
         for row in range(0, results.shape[0]):
-            if original_basename.loc[row] == augmented_basename.loc[row]:
-                results.loc[row, 'filename'] = augmented_filename.loc[row]
+            if original_basename.loc[row] == augmented_basename.loc[row]:   # Sloppy check to see if the file names match
+                results.loc[row, 'filename'] = augmented_filepath.loc[row]
 
-        ## TODO: Append to learning data
         results_df = pd.concat([inputs, results])
+        results_df = d3m_DataFrame(results_df)
 
-        ## TODO: Assign the result to the output data frame
+        ## Assemble first output column ('d3mIndex)
+        col_dict = dict(results_df.metadata.query((metadata_base.ALL_ELEMENTS, 0)))
+        col_dict['structural_type'] = type("1")
+        col_dict['name'] = 'd3mIndex'
+        col_dict['semantic_types'] = ('http://schema.org/Integer',
+                                      'https://metadata.datadrivendiscovery.org/types/PrimaryKey')
+        results_df.metadata = results_df.metadata.update((metadata_base.ALL_ELEMENTS, 0), col_dict)
 
-        return CallResult(None)
+        ## Assemble third output column ('filename')
+        col_dict = dict(results_df.metadata.query((metadata_base.ALL_ELEMENTS, 1)))
+        col_dict['structural_type'] = type("1")
+        col_dict['name'] = 'filename'
+        col_dict['semantic_types'] = ('http://schema.org/String',
+                                      'https://metadata.datadrivendiscovery.org/types/Text')
+        results_df.metadata = results_df.metadata.update((metadata_base.ALL_ELEMENTS, 1), col_dict)
+
+        ## Assemble second output column ('bounding_box')
+        col_dict = dict(results_df.metadata.query((metadata_base.ALL_ELEMENTS, 2)))
+        col_dict['structural_type'] = type("1")
+        col_dict['name'] = 'bounding_box'
+        col_dict['semantic_types'] = ('http://schema.org/Text',
+                                      'https://metadata.datadrivendiscovery.org/types/PredictedTarget',
+                                      'https://metadata.datadrivendiscovery.org/types/BoundingPolygon')
+        results_df.metadata = results_df.metadata.update((metadata_base.ALL_ELEMENTS, 2), col_dict)
+
+        return CallResult(results_df)
+
 
 # """ WORKSPACE """
 #     center_crop = hyperparams.Union(
@@ -248,3 +268,12 @@ class ImageAugmentationPrimitive(TransformerPrimitiveBase[Inputs, Outputs, Hyper
         # })
 
         # test_results.to_csv('/image-augmentation/imageAugmentationD3MWrapper/temp/test_results.csv', index = False)
+
+        # print('augmented_filename:', file = sys.__stdout__)
+        # print(augmented_filename[0], file = sys.__stdout__)
+        # print('augmented_basename:', file = sys.__stdout__)
+        # print(augmented_basename[0], file = sys.__stdout__)
+        # print('augmented_filepath:', file = sys.__stdout__)
+        # print(augmented_filepath[0], file = sys.__stdout__)
+
+#results_df.to_csv('/image-augmentation/imageAugmentationD3MWrapper/temp/results_df.csv', index = False)
