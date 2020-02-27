@@ -155,6 +155,7 @@ class ImageAugmentationPrimitive(TransformerPrimitiveBase[Inputs, Outputs, Hyper
 
         # Assemble into the Compose function
         aug = self._augmentation(bbox_params = bbox_params, transform_group = self.hyperparams['transform_group'])
+
         # Apply compose function to image set
         export_path = self.hyperparams['data_path']
 
@@ -210,70 +211,3 @@ class ImageAugmentationPrimitive(TransformerPrimitiveBase[Inputs, Outputs, Hyper
         results_df.metadata = results_df.metadata.update((metadata_base.ALL_ELEMENTS, 2), col_dict)
 
         return CallResult(results_df)
-
-
-# """ WORKSPACE """
-#     center_crop = hyperparams.Union(
-#         OrderedDict({
-#             'height': hyperparams.Constant[int](
-#                 semantic_types = ['https://metadata.datadrivendiscovery.org/types/TuningParameter'],
-#                 description = 'height of the crop'
-#             ),
-#             'width': hyperparams.Constant[int](
-#                 semantic_types = ['https://metadata.datadrivendiscovery.org/types/TuningParameter'],
-#                 description = 'width of the crop'
-#             )
-#         })
-#     )
-
-# max_delta_step = hyperparams.Union[Union[int, None]](
-#         configuration=OrderedDict(
-#             limit=hyperparams.Bounded[int](
-#                 lower=1,
-#                 upper=None,
-#                 default=1,
-#                 description='Maximum delta step we allow each leaf output to be.'
-#             ),
-#             unlimited=hyperparams.Enumeration[int](
-#                 values=[0],
-#                 default=0,
-#                 description='No constraint.',
-#             ),
-#         ),
-#         default='unlimited',
-#         description='Maximum delta step we allow.',
-#         semantic_types=['https://metadata.datadrivendiscovery.org/types/TuningParameter'],
-#     )
-
-# original_filename = os.path.basename(results['filename'])[0]
-#         augmented_filename = os.path.basename(os.listdir(export_path))[0]
-
-#         if original_filename == augmented_filename:
-#             results['filename'][0] = export_path[0]
-
-#         results.apply(lambda row: _construct_augmented_image_table(results[]))
-
-# def _construct_augmented_image_table(self, results, export_path):
-#         original_filename = os.path.basename(results['filename'])
-#         augmented_filename = os.path.basename(os.listdir(export_path))
-
-#         if original_filename == augmented_filename:
-#             return results['filename'] = export_path
-
-        # test_results = pd.DataFrame({
-        #     'inputs_filename': inputs['filename'],
-        #     'results_filename': results['filename'],
-        #     'inputs_bounding_box': inputs['bounding_box'],
-        #     'results_bounding_box': results['bounding_box']
-        # })
-
-        # test_results.to_csv('/image-augmentation/imageAugmentationD3MWrapper/temp/test_results.csv', index = False)
-
-        # print('augmented_filename:', file = sys.__stdout__)
-        # print(augmented_filename[0], file = sys.__stdout__)
-        # print('augmented_basename:', file = sys.__stdout__)
-        # print(augmented_basename[0], file = sys.__stdout__)
-        # print('augmented_filepath:', file = sys.__stdout__)
-        # print(augmented_filepath[0], file = sys.__stdout__)
-
-#results_df.to_csv('/image-augmentation/imageAugmentationD3MWrapper/temp/results_df.csv', index = False)

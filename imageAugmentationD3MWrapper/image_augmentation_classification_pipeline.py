@@ -29,7 +29,16 @@ step_2.add_hyperparameter(name = 'data_path', argument_type = ArgumentType.VALUE
 step_2.add_output('produce')
 pipeline_description.add_step(step_2)
 
-pipeline_description.add_output(name = 'output_predictions', data_reference = 'steps.2.produce')
+# Step 3: Unicorn primitive
+step_3 = PrimitiveStep(primitive=index.get_primitive('d3m.primitives.digital_image_processing.unicorn.Unicorn'))
+step_3.add_argument(name='inputs', argument_type=ArgumentType.CONTAINER, data_reference='steps.2.produce')
+step_3.add_hyperparameter(name='target_columns', argument_type= ArgumentType.VALUE, data=['filename'])
+step_3.add_hyperparameter(name='output_labels', argument_type= ArgumentType.VALUE, data=['label'])
+step_3.add_output('produce')
+pipeline_description.add_step(step_3)
+
+# Final Output
+pipeline_description.add_output(name = 'output_predictions', data_reference = 'steps.3.produce')
 
 # Output JSON pipeline
 blob = pipeline_description.to_json()
